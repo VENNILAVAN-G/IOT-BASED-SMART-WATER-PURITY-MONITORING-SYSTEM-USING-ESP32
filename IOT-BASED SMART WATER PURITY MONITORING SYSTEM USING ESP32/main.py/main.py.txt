@@ -1,0 +1,18 @@
+# Water Quality Monitoring Simulation (TDS Checker)
+
+def check_water_quality(tds_level):
+    print(f"Current TDS Level detected: {tds_level} ppm")
+    
+    # Safe drinking water TDS limit is generally up to 300-500 ppm
+    if tds_level <= 300:
+        return "Status: Safe to Drink 🟢"
+    elif 300 < tds_level <= 500:
+        return "Status: Acceptable, but monitor closely 🟡"
+    else:
+        return "Status: UNSAFE! High TDS. Risk of Kidney Stones & Health Issues! 🔴"
+
+if __name__ == "__main__":
+    # Test with a sample TDS value (e.g., 650 ppm spike)
+    current_tds = 650
+    result = check_water_quality(current_tds)
+    print(result)

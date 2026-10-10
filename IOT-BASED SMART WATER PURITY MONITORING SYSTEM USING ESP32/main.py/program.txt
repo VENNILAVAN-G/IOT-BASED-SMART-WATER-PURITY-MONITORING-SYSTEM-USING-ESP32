@@ -1,0 +1,104 @@
+#define BLYNK_PRINT Serial
+#include <WiFi.h>
+#include <WiFiClient.h>
+#include <BlynkSimpleEsp32.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
+
+// WiFi and Blynk Configuration
+char auth[] = "Your_Blynk_Auth_Token";
+char ssid[] = "Your_WiFi_SSID";
+char pass[] = "Your_WiFi_Password";
+
+// Hardware Pin Definitions
+#define PH_PIN 34
+#define TDS_PIN 35
+#define TURBIDITY_PIN 32
+#define ONE_WIRE_BUS 4
+#define BUZZER_PIN 18
+
+// Initialize Sensor Objects
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature tempSensor(&oneWire);
+
+// Global Variables
+float phValue = 0.0;
+float tdsValue = 0.0;
+float turbidityNTU = 0.0;
+float tempC = 0.0;
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(BUZZER_PIN, OUTPUT);
+  digitalWrite(BUZZER_PIN, LOW);
+
+  // Initialize LCD
+  lcd.init();
+  lcd.backlight();
+  lcd.setCursor(0, 0);
+  lcd.print("Water Purity System");
+  lcd.setCursor(0, 1);
+  lcd.print("Initializing...");
+
+  // Initialize Sensors & Blynk
+  tempSensor.begin();
+  Blynk.begin(auth, ssid, pass);
+  delay(2000);
+  lcd.clear();
+}
+
+void loop() {
+  Blynk.run();
+
+  // 1. Read Temperature
+  tempSensor.requestTemperatures();
+  tempC = tempSensor.getTempCByIndex(0);
+
+  // 2. Read pH Value
+  int phRaw = analogRead(PH_PIN);
+  float phVoltage = phRaw * (3.3 / 4095.0);
+  phValue = 3.5 * phVoltage + 0.50; // Calibration curve offset
+
+  // 3. Read TDS Value
+  int tdsRaw = analogRead(TDS_PIN);
+  float tdsVoltage = tdsRaw * (3.3 / 4095.0);
+  float compensationCoefficient = 1.0 + 0.02 * (tempC - 25.0); // Temperature compensation
+  float compensatedVoltage = tdsVoltage / compensationCoefficient;
+  tdsValue = (133.42 * compensatedVoltage * compensatedVoltage * compensatedVoltage 
+              - 255.86 * compensatedVoltage * compensatedVoltage 
+              + 857.39 * compensatedVoltage) * 0.5;
+
+  // 4. Read Turbidity Value
+  int turbRaw = analogRead(TURBIDITY_PIN);
+  float turbVoltage = turbRaw * (3.3 / 4095.0);
+  turbidityNTU = -1120.4 * (turbVoltage * turbVoltage) + 5742.3 * turbVoltage - 4352.9;
+  if (turbidityNTU < 0) turbidityNTU = 0;
+
+  // 5. Threshold Verification & Alarm Logic
+  if (phValue < 6.5 || phValue > 8.5 || tdsValue > 500 || turbidityNTU > 5) {
+    digitalWrite(BUZZER_PIN, HIGH); // Alert Active
+    Blynk.logEvent("water_alert", "Warning: Impure Water Detected!");
+  } else {
+    digitalWrite(BUZZER_PIN, LOW);
+  }
+
+  // 6. Display Data on Local LCD
+  lcd.setCursor(0, 0);
+  lcd.print("pH:"); lcd.print(phValue, 1);
+  lcd.print(" T:"); lcd.print(tempC, 1); lcd.print("C");
+  
+  lcd.setCursor(0, 1);
+  lcd.print("TDS:"); lcd.print((int)tdsValue);
+  lcd.print(" NTU:"); lcd.print((int)turbidityNTU);
+
+  // 7. Push Data to Blynk Cloud
+  Blynk.virtualWrite(V0, phValue);
+  Blynk.virtualWrite(V1, tdsValue);
+  Blynk.virtualWrite(V2, turbidityNTU);
+  Blynk.virtualWrite(V3, tempC);
+
+  delay(2000);
+}
